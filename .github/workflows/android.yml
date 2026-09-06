@@ -204,88 +204,195 @@ jobs:
 
           rm -rf "$PROJECT_DIR/.godot"
 
-      - name: Patch Scarlet Veil runtime errors
+      - name: Patch Scarlet Veil runtime and black-screen errors
         shell: bash
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
           import os
+          import re
           from pathlib import Path
 
           root = Path(os.environ["PROJECT_DIR"])
 
-          # ---------------------------------------
-          # FIX 1: default_bus_layout.tres
-          # ---------------------------------------
+          # =========================================================
+          # FIX 1 — AUDIO BUS
+          # =========================================================
           bus_file = root / "default_bus_layout.tres"
 
-          bus_file.write_text(
-          '''[gd_resource type="AudioBusLayout" format=3]
+          bus_text = "\n".join([
+              '[gd_resource type="AudioBusLayout" format=3]',
+              '',
+              '[resource]',
+              '',
+              'bus/0/name = &"Master"',
+              'bus/0/solo = false',
+              'bus/0/mute = false',
+              'bus/0/bypass_fx = false',
+              'bus/0/volume_db = 0.0',
+              'bus/0/send = &""',
+              ''
+          ])
 
-          [resource]
-
-          bus/0/name = &"Master"
-          bus/0/solo = false
-          bus/0/mute = false
-          bus/0/bypass_fx = false
-          bus/0/volume_db = 0.0
-          bus/0/send = &""
-          ''',
-          encoding="utf-8"
-          )
-
+          bus_file.write_text(bus_text, encoding="utf-8")
           print("Fixed default_bus_layout.tres")
 
-          # ---------------------------------------
-          # FIX 2: save_manager.gd
-          # ---------------------------------------
+          # =========================================================
+          # FIX 2 — SAVE MANAGER TYPE
+          # =========================================================
           save_file = root / "scripts" / "save_manager.gd"
-
           save_text = save_file.read_text(encoding="utf-8")
 
-          old_settings = 'var settings := default_data()["settings"]'
-          new_settings = 'var settings: Dictionary = default_data()["settings"].duplicate(true)'
-
-          if old_settings in save_text:
-              save_text = save_text.replace(
-                  old_settings,
-                  new_settings
-              )
-              print("Fixed save_manager.gd settings type")
-          else:
-              print("save_manager.gd already fixed or changed")
-
-          save_file.write_text(
-              save_text,
-              encoding="utf-8"
+          save_text = save_text.replace(
+              'var settings := default_data()["settings"]',
+              'var settings: Dictionary = default_data()["settings"].duplicate(true)'
           )
 
-          # ---------------------------------------
-          # FIX 3: title_screen.gd
-          # ---------------------------------------
-          title_file = root / "ui" / "title_screen.gd"
+          save_file.write_text(save_text, encoding="utf-8")
+          print("Fixed save_manager.gd")
 
+          # =========================================================
+          # FIX 3 — TITLE SCREEN TYPE
+          # =========================================================
+          title_file = root / "ui" / "title_screen.gd"
           title_text = title_file.read_text(encoding="utf-8")
 
-          old_subtitle = "var subtitle := subtitle_node"
-          new_subtitle = "var subtitle: Label = subtitle_node as Label"
-
-          if old_subtitle in title_text:
-              title_text = title_text.replace(
-                  old_subtitle,
-                  new_subtitle
-              )
-              print("Fixed title_screen.gd subtitle type")
-          else:
-              print("title_screen.gd already fixed or changed")
-
-          title_file.write_text(
-              title_text,
-              encoding="utf-8"
+          title_text = title_text.replace(
+              "var subtitle := subtitle_node",
+              "var subtitle: Label = subtitle_node as Label"
           )
 
-          print("Scarlet Veil runtime patches complete.")
+          title_file.write_text(title_text, encoding="utf-8")
+          print("Fixed title_screen.gd")
+
+          # =========================================================
+          # FIX 4 — INTRO -> BLACK SCREEN
+          #
+          # OLD:
+          # loading screen -> intro -> instantiate world
+          #
+          # NEW:
+          # loading screen -> instantiate world -> intro -> reveal world
+          # =========================================================
+          main_file = root / "scripts" / "main.gd"
+          main_text = main_file.read_text(encoding="utf-8")
+
+          new_start_game = """func _start_game(play_intro: bool) -> void:
+          \tif is_instance_valid(title_screen):
+          \t\ttitle_screen.queue_free()
+          \t\ttitle_screen = null
+
+          \tloading_screen = LOADING_SCENE.instantiate()
+          \tadd_child(loading_screen)
+
+          \tAudioManager.stop_music(0.2)
+
+          \tvar request_error := ResourceLoader.load_threaded_request(
+          \t\tWORLD_PATH,
+          \t\t"PackedScene"
+          \t)
+
+          \tif request_error != OK:
+          \t\tpush_error("Scarlet Veil: failed to request World.tscn.")
+          \t\tshow_title()
+          \t\treturn
+
+          \tvar progress := []
+          \tvar minimum_show_time := 1.75
+          \tvar shown := 0.0
+
+          \twhile true:
+          \t\tvar status := ResourceLoader.load_threaded_get_status(
+          \t\t\tWORLD_PATH,
+          \t\t\tprogress
+          \t\t)
+
+          \t\tvar p := 0.0
+
+          \t\tif not progress.is_empty():
+          \t\t\tp = clampf(float(progress[0]), 0.0, 1.0)
+
+          \t\tloading_screen.set_progress(
+          \t\t\tp,
+          \t\t\t_loading_stage(p)
+          \t\t)
+
+          \t\tawait get_tree().process_frame
+          \t\tshown += get_process_delta_time()
+
+          \t\tif status == ResourceLoader.THREAD_LOAD_FAILED or status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+          \t\t\tpush_error("Scarlet Veil: World.tscn loading failed.")
+          \t\t\tshow_title()
+          \t\t\treturn
+
+          \t\tif status == ResourceLoader.THREAD_LOAD_LOADED and shown >= minimum_show_time:
+          \t\t\tbreak
+
+          \tloading_screen.set_progress(
+          \t\t1.0,
+          \t\t"AWAKENING CAEL MOURNE"
+          \t)
+
+          \t# Instantiate gameplay BEFORE the intro.
+          \t# The loading screen hides this initialization.
+          \tvar packed = ResourceLoader.load_threaded_get(WORLD_PATH)
+
+          \tif not (packed is PackedScene):
+          \t\tpush_error("Scarlet Veil: World.tscn is invalid.")
+          \t\tshow_title()
+          \t\treturn
+
+          \tworld = packed.instantiate()
+          \tadd_child(world)
+
+          \tif world.has_signal("return_to_title"):
+          \t\tworld.return_to_title.connect(show_title)
+
+          \t# Let World, Seren, Camera2D and HUD fully enter the tree.
+          \tawait get_tree().process_frame
+          \tawait get_tree().process_frame
+          \tawait get_tree().process_frame
+
+          \tloading_screen.finish()
+          \tawait loading_screen.finished
+
+          \tloading_screen.queue_free()
+          \tloading_screen = null
+
+          \tawait get_tree().process_frame
+
+          \tif play_intro:
+          \t\tawait _play_intro()
+
+          \t# Make absolutely sure the intro CanvasLayer has been freed
+          \t# before gameplay becomes visible.
+          \tawait get_tree().process_frame
+          \tawait get_tree().process_frame"""
+
+          pattern = (
+              r'func _start_game\(play_intro: bool\) -> void:\n'
+              r'.*?'
+              r'(?=\nfunc _loading_stage\(p: float\) -> String:)'
+          )
+
+          main_text, replacements = re.subn(
+              pattern,
+              new_start_game,
+              main_text,
+              count=1,
+              flags=re.DOTALL
+          )
+
+          if replacements != 1:
+              raise RuntimeError(
+                  "Could not patch _start_game() in scripts/main.gd"
+              )
+
+          main_file.write_text(main_text, encoding="utf-8")
+
+          print("Fixed main.gd intro/world loading order")
+          print("All Scarlet Veil patches completed.")
           PY
 
           rm -rf "$PROJECT_DIR/.godot"
@@ -295,13 +402,39 @@ jobs:
         run: |
           set -euo pipefail
 
+          IMPORT_LOG="$GITHUB_WORKSPACE/godot-import.log"
+
+          set +e
+
           godot \
             --headless \
             --editor \
             --path "$PROJECT_DIR" \
-            --quit
+            --quit \
+            >"$IMPORT_LOG" 2>&1
 
-      - name: Runtime smoke test
+          CODE=$?
+
+          set -e
+
+          cat "$IMPORT_LOG"
+
+          if [ "$CODE" -ne 0 ]; then
+            echo "Godot import failed."
+            exit "$CODE"
+          fi
+
+          if grep -E \
+            "SCRIPT ERROR|Parse Error|Cannot load|Failed loading resource" \
+            "$IMPORT_LOG"; then
+
+            echo "Godot import found a script/resource problem."
+            exit 1
+          fi
+
+          echo "Godot import passed."
+
+      - name: Title screen runtime smoke test
         shell: bash
         run: |
           set -euo pipefail
@@ -328,14 +461,55 @@ jobs:
           fi
 
           if grep -E \
-            "SCRIPT ERROR|Parse Error|Invalid get index|Invalid call|Cannot load|Failed loading resource" \
+            "SCRIPT ERROR|Parse Error|Invalid get index|Invalid call|Cannot load|Failed loading resource|Invalid access|Nonexistent function" \
             "$LOG"; then
 
-            echo "Runtime smoke test found an error."
+            echo "Title screen smoke test found an error."
             exit 1
           fi
 
-          echo "Runtime smoke test passed."
+          echo "Title screen smoke test passed."
+
+      - name: Gameplay world smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LOG="$GITHUB_WORKSPACE/world-smoke.log"
+
+          set +e
+
+          timeout 12s godot \
+            --headless \
+            --audio-driver Dummy \
+            --path "$PROJECT_DIR" \
+            "res://world/World.tscn" \
+            >"$LOG" 2>&1
+
+          CODE=$?
+
+          set -e
+
+          cat "$LOG"
+
+          # 124 = timeout, which is expected because the game
+          # continues running after World.tscn successfully boots.
+          if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 124 ]; then
+            echo "GAMEPLAY WORLD CRASHED WITH CODE $CODE"
+            exit "$CODE"
+          fi
+
+          if grep -E \
+            "SCRIPT ERROR|Parse Error|Invalid get index|Invalid call|Cannot load|Failed loading resource|Invalid access|Nonexistent function|Attempt to call" \
+            "$LOG"; then
+
+            echo "GAMEPLAY WORLD TEST FAILED"
+            exit 1
+          fi
+
+          echo "======================================"
+          echo "GAMEPLAY WORLD BOOTED SUCCESSFULLY"
+          echo "======================================"
 
       - name: Build APK
         shell: bash
