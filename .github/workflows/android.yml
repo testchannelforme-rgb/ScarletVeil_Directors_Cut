@@ -268,12 +268,6 @@ jobs:
 
           # =========================================================
           # FIX 4 — INTRO -> BLACK SCREEN
-          #
-          # OLD:
-          # loading screen -> intro -> instantiate world
-          #
-          # NEW:
-          # loading screen -> instantiate world -> intro -> reveal world
           # =========================================================
           main_file = root / "scripts" / "main.gd"
           main_text = main_file.read_text(encoding="utf-8")
@@ -334,8 +328,6 @@ jobs:
           \t\t"AWAKENING CAEL MOURNE"
           \t)
 
-          \t# Instantiate gameplay BEFORE the intro.
-          \t# The loading screen hides this initialization.
           \tvar packed = ResourceLoader.load_threaded_get(WORLD_PATH)
 
           \tif not (packed is PackedScene):
@@ -349,7 +341,6 @@ jobs:
           \tif world.has_signal("return_to_title"):
           \t\tworld.return_to_title.connect(show_title)
 
-          \t# Let World, Seren, Camera2D and HUD fully enter the tree.
           \tawait get_tree().process_frame
           \tawait get_tree().process_frame
           \tawait get_tree().process_frame
@@ -365,8 +356,6 @@ jobs:
           \tif play_intro:
           \t\tawait _play_intro()
 
-          \t# Make absolutely sure the intro CanvasLayer has been freed
-          \t# before gameplay becomes visible.
           \tawait get_tree().process_frame
           \tawait get_tree().process_frame"""
 
@@ -390,8 +379,71 @@ jobs:
               )
 
           main_file.write_text(main_text, encoding="utf-8")
-
           print("Fixed main.gd intro/world loading order")
+
+          # =========================================================
+          # FIX 5 — WORLD.GD TYPE INFERENCE ERRORS
+          # =========================================================
+          world_file = root / "world" / "world.gd"
+          world_text = world_file.read_text(encoding="utf-8")
+
+          # reveal
+          old_reveal = 'var reveal:=player.equipped_mask=="echo"'
+          new_reveal = 'var reveal: bool = bool(player.equipped_mask == "echo")'
+
+          if old_reveal in world_text:
+              world_text = world_text.replace(
+                  old_reveal,
+                  new_reveal
+              )
+              print("Fixed world.gd reveal type")
+          elif new_reveal in world_text:
+              print("world.gd reveal already fixed")
+          else:
+              raise RuntimeError(
+                  "Could not locate world.gd reveal variable"
+              )
+
+          # player X coordinate
+          old_x = 'var x:=player.global_position.x'
+          new_x = 'var x: float = float(player.global_position.x)'
+
+          if old_x in world_text:
+              world_text = world_text.replace(
+                  old_x,
+                  new_x
+              )
+              print("Fixed world.gd x type")
+          elif new_x in world_text:
+              print("world.gd x already fixed")
+          else:
+              raise RuntimeError(
+                  "Could not locate world.gd x variable"
+              )
+
+          # secret ending availability
+          old_secret = 'var secret_available := SaveManager.data.get("memory_shards", []).size() >= 12 and player.unlocked_masks.has("echo")'
+          new_secret = 'var secret_available: bool = bool(SaveManager.data.get("memory_shards", []).size() >= 12 and player.unlocked_masks.has("echo"))'
+
+          if old_secret in world_text:
+              world_text = world_text.replace(
+                  old_secret,
+                  new_secret
+              )
+              print("Fixed world.gd secret_available type")
+          elif new_secret in world_text:
+              print("world.gd secret_available already fixed")
+          else:
+              raise RuntimeError(
+                  "Could not locate world.gd secret_available variable"
+              )
+
+          world_file.write_text(
+              world_text,
+              encoding="utf-8"
+          )
+
+          print("Fixed all known world.gd type errors")
           print("All Scarlet Veil patches completed.")
           PY
 
@@ -492,8 +544,6 @@ jobs:
 
           cat "$LOG"
 
-          # 124 = timeout, which is expected because the game
-          # continues running after World.tscn successfully boots.
           if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 124 ]; then
             echo "GAMEPLAY WORLD CRASHED WITH CODE $CODE"
             exit "$CODE"
