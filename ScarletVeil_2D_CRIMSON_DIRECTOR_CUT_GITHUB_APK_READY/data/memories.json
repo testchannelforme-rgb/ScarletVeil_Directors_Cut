@@ -1,0 +1,50 @@
+{
+  "sanctuary_01": {
+    "title": "A Gentle Mercy",
+    "text": "A woman kneels before a white mask. ‘The Veilbound saved us. They took the pain away.’"
+  },
+  "sanctuary_02": {
+    "title": "The Missing Face",
+    "text": "A scratched confession: ‘They called it mercy when they removed my daughter’s face from my mind.’"
+  },
+  "seren_warning": {
+    "title": "A Voice Like Mine",
+    "text": "A recording in Seren’s own voice: ‘If you wake, do not remember.’"
+  },
+  "ashen_01": {
+    "title": "Red Flowers",
+    "text": "I remember these flowers before the Veil. Another voice insists they grew only after everyone died."
+  },
+  "ashen_02": {
+    "title": "A Door Left Open",
+    "text": "Someone returned to this house every night. No one inside remembered who they were."
+  },
+  "choir_01": {
+    "title": "The Last Shift",
+    "text": "The machinery kept turning after the workers forgot what it was built to make."
+  },
+  "echo_secret": {
+    "title": "The Second Seren",
+    "text": "A child stands beside the Heartwell. She turns toward you and says, ‘You are late.’"
+  },
+  "bellkeeper": {
+    "title": "Command Seven",
+    "text": "Ring until evacuation is complete. No counter-order received. The command is centuries old."
+  },
+  "mother_thren": {
+    "title": "The Cradle Number",
+    "text": "A registry lists three hundred and twelve children evacuated from Ashen Hollow. Mother Thren's name appears under 'volunteers'. The next page insists there were no children in the district."
+  },
+  "archive_01": {
+    "title": "The Redaction Room",
+    "text": "A Veilbound clerk whispers: 'We do not erase the memory. We remove the part that teaches it how to hurt.' Someone off-screen asks what remains of a person after that."
+  },
+  "archive_02": {
+    "title": "The King's Two Orders",
+    "text": "Two royal seals carry the same date. One commands the Opening. The other orders every seal destroyed. Both signatures are authentic."
+  },
+  "regent_echo": {
+    "title": "A Familiar Voice",
+    "text": "The Pale Regent removes his crown. For one impossible instant, he speaks in the voice Seren remembers as her father's: 'I rebuilt myself from what you refused to keep.'"
+  }
+}

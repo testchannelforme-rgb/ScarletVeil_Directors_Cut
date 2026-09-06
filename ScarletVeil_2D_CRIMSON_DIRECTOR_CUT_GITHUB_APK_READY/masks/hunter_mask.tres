@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="HeartglassMask" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://masks/mask_resource.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/mask_hunter.png" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = "hunter"
+display_name = "HUNTER"
+description = "A predatory Heartglass cut. Faster attacks and stronger dash."
+defense_multiplier = 1.0
+attack_speed_multiplier = 0.72
+damage_multiplier = 1.15
+grapple_range_multiplier = 1.0
+icon = ExtResource("2")

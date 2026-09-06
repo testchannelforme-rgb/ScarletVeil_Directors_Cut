@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="HeartglassMask" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://masks/mask_resource.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/mask_veilbound.png" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = "veilbound"
+display_name = "VEILBOUND"
+description = "Heartglass dampens incoming Veilfire. 20% less damage."
+defense_multiplier = 0.8
+attack_speed_multiplier = 1.0
+damage_multiplier = 1.0
+grapple_range_multiplier = 1.0
+icon = ExtResource("2")

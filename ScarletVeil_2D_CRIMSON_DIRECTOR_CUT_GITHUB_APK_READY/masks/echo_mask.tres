@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="HeartglassMask" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://masks/mask_resource.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/mask_echo.png" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = "echo"
+display_name = "ECHO"
+description = "Reveals hidden Memory Shards and distant Threadblade anchors."
+defense_multiplier = 0.92
+attack_speed_multiplier = 0.92
+damage_multiplier = 1.0
+grapple_range_multiplier = 1.28
+icon = ExtResource("2")
