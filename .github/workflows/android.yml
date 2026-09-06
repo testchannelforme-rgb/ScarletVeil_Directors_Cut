@@ -1,0 +1,194 @@
+name: Build Scarlet Veil Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.7.2"
+  GODOT_STATUS: "stable"
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find Godot project
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "$GITHUB_WORKSPACE/project.godot" ]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE"
+          else
+            PROJECT_FILE="$(find "$GITHUB_WORKSPACE" -type f -name project.godot -not -path '*/.git/*' -print -quit)"
+            if [ -z "${PROJECT_FILE:-}" ]; then
+              echo "ERROR: project.godot was not found. Upload the extracted project, not only the ZIP."
+              exit 1
+            fi
+            PROJECT_DIR="$(dirname "$PROJECT_FILE")"
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Scarlet Veil project: $PROJECT_DIR"
+          test -f "$PROJECT_DIR/export_presets.cfg"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            "platform-tools" \
+            "build-tools;35.0.1" \
+            "platforms;android-35" \
+            "cmdline-tools;latest"
+
+      - name: Download Godot 4.7.2 and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          wget -q \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_STATUS}/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64.zip" \
+            -O /tmp/godot.zip
+          rm -rf /tmp/godot
+          mkdir -p /tmp/godot
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          GODOT_BIN="/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"
+          chmod +x "$GODOT_BIN"
+          sudo install -m 0755 "$GODOT_BIN" /usr/local/bin/godot
+          godot --version
+
+          wget -q \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_STATUS}/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_export_templates.tpz" \
+            -O /tmp/templates.tpz
+          rm -rf /tmp/godot_templates
+          mkdir -p /tmp/godot_templates
+          unzip -q /tmp/templates.tpz -d /tmp/godot_templates
+          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}"
+          mkdir -p "$TEMPLATE_DIR"
+          cp -a /tmp/godot_templates/templates/. "$TEMPLATE_DIR/"
+          test -f "$TEMPLATE_DIR/android_debug.apk"
+
+      - name: Install stable debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          KEYSTORE="$GITHUB_WORKSPACE/.github/ci/scarletveil-debug.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "ERROR: stable debug keystore is missing."
+            exit 1
+          fi
+          cp "$KEYSTORE" "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+
+      - name: Configure Godot Android paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<SETTINGS
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          SETTINGS
+
+      - name: Enforce Android-safe export settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          root = Path(os.environ["PROJECT_DIR"])
+          preset = root / "export_presets.cfg"
+          p = preset.read_text(encoding="utf-8")
+          p = re.sub(r'^gradle_build/min_sdk\s*=.*$', 'gradle_build/min_sdk=""', p, flags=re.MULTILINE)
+          p = re.sub(r'^gradle_build/target_sdk\s*=.*$', 'gradle_build/target_sdk=""', p, flags=re.MULTILINE)
+          preset.write_text(p, encoding="utf-8")
+          project = root / "project.godot"
+          t = project.read_text(encoding="utf-8")
+          key = "textures/vram_compression/import_etc2_astc"
+          if re.search(r'^' + re.escape(key) + r'\s*=', t, flags=re.MULTILINE):
+              t = re.sub(r'^' + re.escape(key) + r'\s*=.*$', key + '=true', t, flags=re.MULTILINE)
+          elif "[rendering]" in t:
+              t = t.replace("[rendering]", "[rendering]\n" + key + "=true", 1)
+          else:
+              t += "\n[rendering]\n" + key + "=true\n"
+          project.write_text(t, encoding="utf-8")
+          PY
+          rm -rf "$PROJECT_DIR/.godot"
+
+      - name: Import and validate project
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --editor --path "$PROJECT_DIR" --quit
+
+      - name: Runtime smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$GITHUB_WORKSPACE/godot-smoke.log"
+          set +e
+          timeout 8s godot --headless --audio-driver Dummy --path "$PROJECT_DIR" >"$LOG" 2>&1
+          CODE=$?
+          set -e
+          cat "$LOG"
+          # timeout(124) is expected because the title screen waits for input.
+          if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 124 ]; then
+            echo "Godot exited unexpectedly with code $CODE"
+            exit "$CODE"
+          fi
+          if grep -E "SCRIPT ERROR|Parse Error|Invalid get index|Invalid call|Cannot load|Failed loading resource" "$LOG"; then
+            echo "Runtime smoke test found a Godot script/resource error."
+            exit 1
+          fi
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GODOT_ANDROID_KEYSTORE_DEBUG_PATH="$HOME/.android/debug.keystore"
+          export GODOT_ANDROID_KEYSTORE_DEBUG_USER="androiddebugkey"
+          export GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD="android"
+          OUTPUT_DIR="$GITHUB_WORKSPACE/builds/android"
+          OUTPUT_APK="$OUTPUT_DIR/ScarletVeil.apk"
+          mkdir -p "$OUTPUT_DIR"
+          godot \
+            --headless \
+            --path "$PROJECT_DIR" \
+            --export-debug "Android" \
+            "$OUTPUT_APK"
+          test -s "$OUTPUT_APK"
+          ls -lh "$OUTPUT_APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScarletVeil-Android-debug
+          path: builds/android/ScarletVeil.apk
+          if-no-files-found: error
+          retention-days: 14
