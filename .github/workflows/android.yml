@@ -85,19 +85,27 @@ jobs:
           cp -a /tmp/godot_templates/templates/. "$TEMPLATE_DIR/"
           test -f "$TEMPLATE_DIR/android_debug.apk"
 
-      - name: Install stable debug keystore
+                - name: Create Android debug keystore
         shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p "$HOME/.android"
-          KEYSTORE="$GITHUB_WORKSPACE/.github/ci/scarletveil-debug.keystore"
-          if [ ! -f "$KEYSTORE" ]; then
-            echo "ERROR: stable debug keystore is missing."
-            exit 1
-          fi
-          cp "$KEYSTORE" "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+
+          keytool -genkeypair \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Scarlet Veil,C=US" \
+            -storetype JKS \
+            -noprompt
+
+          echo "Debug keystore created."
+
 
       - name: Configure Godot Android paths
         shell: bash
