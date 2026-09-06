@@ -204,6 +204,92 @@ jobs:
 
           rm -rf "$PROJECT_DIR/.godot"
 
+      - name: Patch Scarlet Veil runtime errors
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["PROJECT_DIR"])
+
+          # ---------------------------------------
+          # FIX 1: default_bus_layout.tres
+          # ---------------------------------------
+          bus_file = root / "default_bus_layout.tres"
+
+          bus_file.write_text(
+          '''[gd_resource type="AudioBusLayout" format=3]
+
+          [resource]
+
+          bus/0/name = &"Master"
+          bus/0/solo = false
+          bus/0/mute = false
+          bus/0/bypass_fx = false
+          bus/0/volume_db = 0.0
+          bus/0/send = &""
+          ''',
+          encoding="utf-8"
+          )
+
+          print("Fixed default_bus_layout.tres")
+
+          # ---------------------------------------
+          # FIX 2: save_manager.gd
+          # ---------------------------------------
+          save_file = root / "scripts" / "save_manager.gd"
+
+          save_text = save_file.read_text(encoding="utf-8")
+
+          old_settings = 'var settings := default_data()["settings"]'
+          new_settings = 'var settings: Dictionary = default_data()["settings"].duplicate(true)'
+
+          if old_settings in save_text:
+              save_text = save_text.replace(
+                  old_settings,
+                  new_settings
+              )
+              print("Fixed save_manager.gd settings type")
+          else:
+              print("save_manager.gd already fixed or changed")
+
+          save_file.write_text(
+              save_text,
+              encoding="utf-8"
+          )
+
+          # ---------------------------------------
+          # FIX 3: title_screen.gd
+          # ---------------------------------------
+          title_file = root / "ui" / "title_screen.gd"
+
+          title_text = title_file.read_text(encoding="utf-8")
+
+          old_subtitle = "var subtitle := subtitle_node"
+          new_subtitle = "var subtitle: Label = subtitle_node as Label"
+
+          if old_subtitle in title_text:
+              title_text = title_text.replace(
+                  old_subtitle,
+                  new_subtitle
+              )
+              print("Fixed title_screen.gd subtitle type")
+          else:
+              print("title_screen.gd already fixed or changed")
+
+          title_file.write_text(
+              title_text,
+              encoding="utf-8"
+          )
+
+          print("Scarlet Veil runtime patches complete.")
+          PY
+
+          rm -rf "$PROJECT_DIR/.godot"
+
       - name: Import and validate project
         shell: bash
         run: |
@@ -223,6 +309,7 @@ jobs:
           LOG="$GITHUB_WORKSPACE/godot-smoke.log"
 
           set +e
+
           timeout 8s godot \
             --headless \
             --audio-driver Dummy \
@@ -230,6 +317,7 @@ jobs:
             >"$LOG" 2>&1
 
           CODE=$?
+
           set -e
 
           cat "$LOG"
@@ -246,6 +334,8 @@ jobs:
             echo "Runtime smoke test found an error."
             exit 1
           fi
+
+          echo "Runtime smoke test passed."
 
       - name: Build APK
         shell: bash
@@ -269,7 +359,10 @@ jobs:
 
           test -s "$OUTPUT_APK"
 
-          echo "APK CREATED SUCCESSFULLY:"
+          echo "======================================"
+          echo "SCARLET VEIL APK CREATED SUCCESSFULLY"
+          echo "======================================"
+
           ls -lh "$OUTPUT_APK"
 
       - name: Upload APK artifact
